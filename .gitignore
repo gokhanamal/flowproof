@@ -3,3 +3,12 @@ artifacts/
 .DS_Store
 *.log
 node_modules/
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.mobileprovision
+coverage/
+DerivedData/

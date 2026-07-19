@@ -1,0 +1,17 @@
+# Default review owner
+* @gokhanamal
+
+# Public distribution and automation
+/action.yml @gokhanamal
+/.github/actions/ @gokhanamal
+/.github/workflows/ @gokhanamal
+
+# Dependencies and security policy
+/package.json @gokhanamal
+/package-lock.json @gokhanamal
+/SECURITY.md @gokhanamal
+/.github/CODEOWNERS @gokhanamal
+
+# Releases and governance
+/CHANGELOG.md @gokhanamal
+/docs/maintainers.md @gokhanamal
