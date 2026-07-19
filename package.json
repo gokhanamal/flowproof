@@ -3,7 +3,23 @@
   "version": "0.1.0",
   "private": true,
   "description": "Agent-driven mobile E2E testing with deterministic evidence",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
+  "author": "Gökhan Namal",
+  "homepage": "https://github.com/gokhanamal/flowproof#readme",
+  "bugs": {
+    "url": "https://github.com/gokhanamal/flowproof/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gokhanamal/flowproof.git"
+  },
+  "keywords": [
+    "appium",
+    "e2e-testing",
+    "github-actions",
+    "ios",
+    "mobile-testing"
+  ],
   "type": "module",
   "engines": {
     "node": ">=22"
