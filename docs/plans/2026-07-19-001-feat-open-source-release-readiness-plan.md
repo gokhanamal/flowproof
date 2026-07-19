@@ -367,4 +367,20 @@ Expected engineering effort is several focused days after decisions are made. Ow
 - The smallest coherent launch is a public GitHub Action/reusable workflow, not an npm package or Marketplace program.
 - The highest-risk work occurs before visibility changes: ownership/license, complete disclosure review, privacy/trust consistency, and immutable version resolution.
 - Public visibility is deliberately the penultimate operational step, followed immediately by protection/security setup and an unrelated-user canary before announcement.
-- No product implementation was changed while producing this plan.
+- Repository preparation was implemented on `chore-open-source-readiness` in commits `99db591`, `2f28d43`, and `51de00c`.
+- A clean `npm ci` installed 530 packages and reported zero vulnerabilities. `npm run validate` passed type checking and all 28 tests; `actionlint`, Markdown-link, issue-template YAML, and diff checks passed.
+- Security review findings were resolved with a manual-only default example, immutable licensed action SHA, least-privilege reporting job, and bot-authored comment filtering.
+- Remaining owner-operated gates are intentionally unchecked: dedicated full-history/run-artifact secret audit, GitHub visibility/security settings, external canary, and `v0.1.0` release publication.
+
+## Post-Deploy Monitoring & Validation
+
+No deployment occurred during repository preparation. After the eventual public
+cutover, monitor the first public CI runs, dependency/security alerts, failed
+setup reports, artifact-access incidents, and model spend for one release cycle.
+
+- **Healthy:** required checks pass; the public fixture succeeds by tag and SHA;
+  private vulnerability reporting works; no secret-backed fork job runs.
+- **Rollback/mitigation trigger:** secret exposure, license/IP blocker, mutable
+  executable ref, or misleading green report. Archive or deprecate and issue a
+  new release; visibility reversal is not a confidentiality rollback.
+- **Owner:** `@gokhanamal`.
