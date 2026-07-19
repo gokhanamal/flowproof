@@ -1,0 +1,103 @@
+name: Reusable iOS Agent E2E
+
+on:
+  workflow_call:
+    inputs:
+      build_command:
+        description: Command that builds the caller's simulator app.
+        required: true
+        type: string
+      app_path:
+        description: Built .app path relative to the caller workspace.
+        required: true
+        type: string
+      flow_path:
+        description: Flow YAML path relative to the caller workspace.
+        required: true
+        type: string
+      model:
+        description: OpenAI model identifier.
+        default: gpt-5.6-luna
+        type: string
+      device_name:
+        description: Preferred simulator device type.
+        default: iPhone 16
+        type: string
+      artifact_name:
+        description: Uploaded artifact name.
+        default: openai-appium-e2e
+        type: string
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ios-agent-e2e:
+    runs-on: macos-15
+    timeout-minutes: 35
+
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Build simulator app
+        shell: bash
+        env:
+          BUILD_COMMAND: ${{ inputs.build_command }}
+        run: bash -lc "$BUILD_COMMAND"
+
+      - name: Create and boot simulator
+        id: simulator
+        shell: bash
+        env:
+          DEVICE_NAME: ${{ inputs.device_name }}
+        run: |
+          simulator_sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          runtime_id=$(xcrun simctl list runtimes --json | ruby -rjson -e '
+            wanted = ARGV.fetch(0)
+            runtimes = JSON.parse(STDIN.read).fetch("runtimes")
+            ios = runtimes.select { |runtime| runtime["platform"] == "iOS" && runtime["isAvailable"] }
+            abort "No iOS Simulator runtime found" if ios.empty?
+            selected = ios.find { |runtime| runtime["version"] == wanted } || ios.max_by { |runtime| Gem::Version.new(runtime["version"]) }
+            puts selected.fetch("identifier")
+          ' "$simulator_sdk")
+          device_type_id=$(xcrun simctl list devicetypes --json | ruby -rjson -e '
+            wanted = ENV.fetch("DEVICE_NAME")
+            types = JSON.parse(STDIN.read).fetch("devicetypes")
+            selected = types.find { |type| type["name"] == wanted } || types.reverse.find { |type| type["name"].start_with?("iPhone ") }
+            abort "No iPhone Simulator device type found" unless selected
+            puts selected.fetch("identifier")
+          ')
+          udid=$(xcrun simctl create "OpenAI Appium E2E" "$device_type_id" "$runtime_id")
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Run recorded agent journey
+        uses: gokhanamal/openai-appium-e2e@v0.1.0
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        with:
+          app_path: ${{ github.workspace }}/${{ inputs.app_path }}
+          flow_path: ${{ github.workspace }}/${{ inputs.flow_path }}
+          simulator_udid: ${{ steps.simulator.outputs.udid }}
+          model: ${{ inputs.model }}
+          artifact_name: ${{ inputs.artifact_name }}
+
+      - name: Delete simulator
+        if: always()
+        shell: bash
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          if [[ -n "$SIMULATOR_UDID" ]]; then
+            xcrun simctl shutdown "$SIMULATOR_UDID" || true
+            xcrun simctl delete "$SIMULATOR_UDID" || true
+          fi

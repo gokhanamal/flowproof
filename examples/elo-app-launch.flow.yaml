@@ -1,0 +1,27 @@
+key: ios-app-launches
+name: iOS - Example app launches and reports healthy diagnostics
+maxTurns: 10
+description: >-
+  Example extraction of the original Elo proof-of-concept launch journey.
+instructions: |
+  Launch the app and verify the chat list contains Daimon and Maya.
+
+  Open Diagnostics and verify the SDK is healthy, reports one adapter, exposes
+  a non-placeholder SDK version, and shows the funnel metric labels.
+
+  End after confirming the launch and diagnostic surfaces.
+evidence:
+  stages:
+    - name: chat list
+      all:
+        - name: Daimon
+        - name: Maya
+    - name: healthy diagnostics
+      all:
+        - name: ok
+        - namePattern: "^SDK v(?!unknown$|n/a$|-$)[A-Za-z0-9][A-Za-z0-9.+-]*$"
+        - namePattern: "^(?:•\\s*)?Adapters:\\s*1$"
+        - name: Ads loaded
+        - name: Confirmed impressions
+        - name: Confirmed clicks
+        - name: Unobservable clicks

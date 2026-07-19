@@ -1,0 +1,18 @@
+key: replace-with-stable-flow-key
+name: iOS - Replace with a user journey
+maxTurns: 10
+description: >-
+  Describe the user-visible contract this flow protects.
+instructions: |
+  Start from the initial app screen and complete the intended user journey.
+
+  End by verifying the behavior that matters to the user.
+evidence:
+  stages:
+    - name: initial screen
+      all:
+        - name: Replace with an accessibility name
+    - name: final outcome
+      all:
+        - type: StaticText
+          namePattern: "^Replace with an anchored pattern$"

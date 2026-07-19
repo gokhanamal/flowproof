@@ -1,0 +1,58 @@
+key: ios-session-toggle-round-trip
+name: iOS - Session disable and restore round trip
+maxTurns: 18
+description: >-
+  Verifies that the example host can disable the Elo SDK session, retain that
+  state across tab navigation, restore the session, and expose a healthy SDK
+  afterward without resetting conversations or changing privacy permissions.
+instructions: |
+  Launch the app and confirm the chat list contains Daimon and Maya.
+
+  Open Session and verify Session enabled is on. Turn Session enabled off, then
+  observe the screen again and confirm the control is off.
+
+  Return to Chat and confirm the same chat list remains available while the
+  session is disabled. Reopen Session, confirm the disabled state persisted,
+  then turn Session enabled back on and observe that it is restored.
+
+  Open Diagnostics and verify the SDK reports ok with one adapter after the
+  session has been restored.
+
+  End only after confirming the complete disable, navigation, persistence,
+  restore, and health-check journey. Leave Session enabled on. Do not reset
+  conversations or change privacy permissions.
+evidence:
+  stages:
+    - name: initial chat list
+      all:
+        - name: Daimon
+        - name: Maya
+    - name: session initially enabled
+      all:
+        - type: Switch
+          name: Session enabled
+          value: "1"
+    - name: session disabled
+      all:
+        - type: Switch
+          name: Session enabled
+          value: "0"
+    - name: chat list while disabled
+      all:
+        - name: Daimon
+        - name: Maya
+    - name: disabled session revisited
+      all:
+        - type: Switch
+          name: Session enabled
+          value: "0"
+    - name: session restored
+      all:
+        - type: Switch
+          name: Session enabled
+          value: "1"
+    - name: healthy Diagnostics after restore
+      all:
+        - name: Diagnostics
+        - name: ok
+        - namePattern: "^(?:•\\s*)?Adapters:\\s*1$"

@@ -1,0 +1,45 @@
+import { remote } from 'webdriverio';
+import type { Config } from './config.js';
+
+export interface ElementHandle {
+  click(): Promise<void>;
+  isExisting(): Promise<boolean>;
+  isDisplayed(): Promise<boolean>;
+}
+
+export interface MobileDriver {
+  $(selector: string): Promise<ElementHandle>;
+  deleteSession(): Promise<void>;
+  getPageSource(): Promise<string>;
+  takeScreenshot(): Promise<string>;
+}
+
+export async function connectAppium(config: Config): Promise<MobileDriver> {
+  const url = config.appiumServerUrl;
+  const port = url.port ? Number.parseInt(url.port, 10) : url.protocol === 'https:' ? 443 : 80;
+  return remote({
+    protocol: url.protocol.slice(0, -1) as 'http' | 'https',
+    hostname: url.hostname,
+    port,
+    path: url.pathname === '/' ? '/' : url.pathname,
+    logLevel: 'warn',
+    connectionRetryCount: 2,
+    // A clean GitHub runner must build WebDriverAgent before Appium can create
+    // the first session. That one-time Xcode build commonly exceeds two minutes.
+    connectionRetryTimeout: 300_000,
+    capabilities: {
+      platformName: 'iOS',
+      'appium:automationName': 'XCUITest',
+      'appium:udid': config.simulatorUdid,
+      'appium:app': config.appPath,
+      'appium:noReset': false,
+      'appium:fullReset': false,
+      'appium:forceAppLaunch': true,
+      'appium:shouldTerminateApp': true,
+      'appium:wdaLaunchTimeout': 300_000,
+      'appium:wdaConnectionTimeout': 300_000,
+      'appium:showXcodeLog': process.env.APPIUM_SHOW_XCODE_LOG === '1',
+      'appium:newCommandTimeout': 180,
+    },
+  }) as unknown as Promise<MobileDriver>;
+}

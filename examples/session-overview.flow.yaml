@@ -1,0 +1,32 @@
+key: ios-session-overview
+name: iOS - Session configuration is visible in the host app
+description: >-
+  Verifies that the example host exposes its SDK lifecycle, identity, and
+  privacy configuration on the Session tab without mutating permissions or
+  session state.
+instructions: |
+  Launch the app and verify the chat list contains Daimon and Maya.
+
+  Open Session without changing any controls. Verify the visible overview
+  includes Session enabled, Reset conversations, Publisher, Ad unit, Privacy,
+  Privacy state at launch, Location state at launch, and COPPA.
+
+  End after confirming those lifecycle, identity, and privacy surfaces are
+  visible together. Do not toggle the session, request permissions, or reset
+  any state.
+evidence:
+  stages:
+    - name: chat list
+      all:
+        - name: Daimon
+        - name: Maya
+    - name: session overview
+      all:
+        - name: Session enabled
+        - name: Reset conversations
+        - name: Publisher
+        - name: Ad unit
+        - name: Privacy
+        - name: Privacy state at launch
+        - name: Location state at launch
+        - name: COPPA
