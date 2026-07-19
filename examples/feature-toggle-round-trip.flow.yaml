@@ -1,0 +1,48 @@
+key: ios-feature-toggle-round-trip
+name: iOS - Notification toggle round trip
+maxTurns: 18
+description: >-
+  Verifies that the example app can disable notifications, retain that state
+  across navigation, and restore the setting afterward.
+instructions: |
+  Launch the app and confirm the home screen contains Welcome and Settings.
+
+  Open Settings and verify Notifications enabled is on. Turn Notifications
+  enabled off, then observe the screen again and confirm the control is off.
+
+  Return to Home and confirm the same content remains available. Reopen
+  Settings, confirm the disabled state persisted, then turn Notifications
+  enabled back on and observe that it is restored.
+
+  End only after confirming the complete disable, navigation, persistence, and
+  restore journey. Leave Notifications enabled on.
+evidence:
+  stages:
+    - name: initial home screen
+      all:
+        - name: Welcome
+        - name: Settings
+    - name: notifications initially enabled
+      all:
+        - type: Switch
+          name: Notifications enabled
+          value: "1"
+    - name: notifications disabled
+      all:
+        - type: Switch
+          name: Notifications enabled
+          value: "0"
+    - name: home screen while disabled
+      all:
+        - name: Welcome
+        - name: Settings
+    - name: disabled setting revisited
+      all:
+        - type: Switch
+          name: Notifications enabled
+          value: "0"
+    - name: notifications restored
+      all:
+        - type: Switch
+          name: Notifications enabled
+          value: "1"

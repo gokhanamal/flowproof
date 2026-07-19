@@ -1,0 +1,119 @@
+name: FlowProof iOS E2E
+description: Run a bounded, recorded iOS Appium journey with deterministic evidence.
+inputs:
+  app_path:
+    description: Path to the built .app bundle.
+    required: true
+  flow_path:
+    description: Path to the project-owned YAML flow.
+    required: true
+  simulator_udid:
+    description: UDID of a booted iOS Simulator.
+    required: true
+  model:
+    description: OpenAI model identifier.
+    default: gpt-5.6-luna
+  artifacts_dir:
+    description: Artifact directory. Defaults inside RUNNER_TEMP.
+    default: ""
+  artifact_name:
+    description: Uploaded artifact name.
+    default: flowproof
+  retention_days:
+    description: Artifact retention period.
+    default: "7"
+  appium_port:
+    description: Local Appium server port.
+    default: "4723"
+outputs:
+  artifacts_path:
+    description: Absolute path containing the run evidence.
+    value: ${{ steps.paths.outputs.artifacts_path }}
+  artifact_url:
+    description: Authenticated URL for the uploaded screen recording and evidence.
+    value: ${{ steps.evidence-upload.outputs.artifact-url }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 24
+
+    - name: Resolve paths
+      id: paths
+      shell: bash
+      env:
+        REQUESTED_ARTIFACTS_DIR: ${{ inputs.artifacts_dir }}
+      run: |
+        artifacts_path="$REQUESTED_ARTIFACTS_DIR"
+        if [[ -z "$artifacts_path" ]]; then
+          artifacts_path="$RUNNER_TEMP/flowproof/run"
+        fi
+        mkdir -p "$artifacts_path"
+        echo "artifacts_path=$artifacts_path" >> "$GITHUB_OUTPUT"
+
+    - name: Install runner and XCUITest driver
+      shell: bash
+      env:
+        ACTION_ROOT: ${{ github.action_path }}
+        APPIUM_HOME: ${{ runner.temp }}/flowproof-appium-home
+      run: |
+        npm ci --prefix "$ACTION_ROOT"
+        npm exec --prefix "$ACTION_ROOT" -- appium driver install xcuitest@11.17.7
+
+    - name: Start Appium
+      shell: bash
+      env:
+        ACTION_ROOT: ${{ github.action_path }}
+        APPIUM_HOME: ${{ runner.temp }}/flowproof-appium-home
+        APPIUM_PORT: ${{ inputs.appium_port }}
+        ARTIFACTS_PATH: ${{ steps.paths.outputs.artifacts_path }}
+      run: |
+        npm exec --prefix "$ACTION_ROOT" -- appium \
+          --address 127.0.0.1 \
+          --port "$APPIUM_PORT" \
+          --base-path / \
+          --log-no-colors \
+          --log-timestamp \
+          > "$ARTIFACTS_PATH/appium.log" 2>&1 &
+        echo "AGENT_APPIUM_PID=$!" >> "$GITHUB_ENV"
+        for _ in {1..60}; do
+          if curl --fail --silent --show-error "http://127.0.0.1:$APPIUM_PORT/status"; then
+            exit 0
+          fi
+          sleep 1
+        done
+        tail -n 100 "$ARTIFACTS_PATH/appium.log"
+        exit 1
+
+    - name: Run agent journey
+      shell: bash
+      env:
+        ACTION_ROOT: ${{ github.action_path }}
+        OPENAI_MODEL: ${{ inputs.model }}
+        OPENAI_AGENTS_DISABLE_TRACING: "1"
+        APPIUM_SERVER_URL: http://127.0.0.1:${{ inputs.appium_port }}
+        SIMULATOR_UDID: ${{ inputs.simulator_udid }}
+        APP_PATH: ${{ inputs.app_path }}
+        FLOW_PATH: ${{ inputs.flow_path }}
+        ARTIFACTS_DIR: ${{ steps.paths.outputs.artifacts_path }}
+      run: npm start --prefix "$ACTION_ROOT"
+
+    - name: Stop Appium
+      if: always()
+      shell: bash
+      run: |
+        if [[ -n "${AGENT_APPIUM_PID:-}" ]]; then
+          kill "$AGENT_APPIUM_PID" || true
+        fi
+
+    - name: Upload run evidence
+      id: evidence-upload
+      if: always()
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      with:
+        name: ${{ inputs.artifact_name }}
+        path: ${{ steps.paths.outputs.artifacts_path }}
+        if-no-files-found: warn
+        retention-days: ${{ inputs.retention_days }}

@@ -1,0 +1,31 @@
+{
+  "name": "@gokhanamal/flowproof",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent-driven mobile E2E testing with deterministic evidence",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "tsx src/cli.ts",
+    "smoke:appium": "tsx src/smoke.ts",
+    "test": "node --import tsx --test test/**/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "validate": "npm run typecheck && npm test"
+  },
+  "dependencies": {
+    "@openai/agents": "0.13.5",
+    "fast-xml-parser": "5.10.1",
+    "webdriverio": "9.29.1",
+    "yaml": "2.9.0",
+    "zod": "4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "appium": "3.5.2",
+    "tsx": "4.23.1",
+    "typescript": "7.0.2"
+  }
+}

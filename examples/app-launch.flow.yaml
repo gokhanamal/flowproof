@@ -1,0 +1,21 @@
+key: ios-app-launches
+name: iOS - Example app launches and opens settings
+maxTurns: 10
+description: >-
+  Verifies that an example app launches and exposes its primary navigation.
+instructions: |
+  Launch the app and verify the home screen contains Welcome and Settings.
+
+  Open Settings and verify the screen contains Profile and Notifications.
+
+  End after confirming the launch and settings surfaces.
+evidence:
+  stages:
+    - name: home screen
+      all:
+        - name: Welcome
+        - name: Settings
+    - name: settings screen
+      all:
+        - name: Profile
+        - name: Notifications

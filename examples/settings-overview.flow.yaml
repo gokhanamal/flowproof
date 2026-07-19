@@ -1,0 +1,25 @@
+key: ios-settings-overview
+name: iOS - Settings overview is visible
+description: >-
+  Verifies that the example app exposes its account and notification settings
+  without changing any saved preferences.
+instructions: |
+  Launch the app and verify the home screen contains Welcome and Settings.
+
+  Open Settings without changing any controls. Verify the visible overview
+  includes Profile, Notifications, Dark mode, and Privacy.
+
+  End after confirming those settings are visible together. Do not toggle any
+  controls or reset any state.
+evidence:
+  stages:
+    - name: home screen
+      all:
+        - name: Welcome
+        - name: Settings
+    - name: settings overview
+      all:
+        - name: Profile
+        - name: Notifications
+        - name: Dark mode
+        - name: Privacy
