@@ -128,6 +128,7 @@ test('open-source workflow checks are fork-safe and least privilege', async () =
   }
   assert.match(actionlint, /raven-actions\/actionlint@[0-9a-f]{40}/);
   assert.match(dependencyReview, /actions\/dependency-review-action@[0-9a-f]{40}/);
+  assert.match(dependencyReview, /if: github\.event\.repository\.visibility == 'public'/);
 });
 
 test('repository remains open-source under Apache-2.0 without npm publication', async () => {
