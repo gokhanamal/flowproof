@@ -1,4 +1,5 @@
 import type { MobileDriver } from './appium.js';
+import type { RuntimeInputs } from './config.js';
 import {
   compactAccessibilityTree,
   observedInputForText,
@@ -24,6 +25,7 @@ export class StructuredActions {
   constructor(
     private readonly driver: MobileDriver,
     private readonly recorder: ActionRecorder,
+    private readonly runtimeInputs?: RuntimeInputs,
   ) {}
 
   updateObservation(nodes: AccessibleNode[]): void {
@@ -43,6 +45,21 @@ export class StructuredActions {
     const element = await this.visibleElement(selectorForObservedInput(target, this.latestNodes), target);
     await element.setValue(text);
     this.recorder.recordAction('enter_text', `${input.type} (${text.length} characters)`);
+  }
+
+  async enterSecret(target: string, inputName: string): Promise<void> {
+    if (!this.runtimeInputs) throw new Error('No runtime inputs are configured');
+    const input = observedInputForText(target, this.latestNodes);
+    if (!input) throw new Error(`Refusing to target an unobserved text input: ${target}`);
+    const value = this.runtimeInputs.resolve(inputName);
+    const element = await this.visibleElement(selectorForObservedInput(target, this.latestNodes), target);
+    try {
+      await element.setValue(value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(this.runtimeInputs.redact(message));
+    }
+    this.recorder.recordAction('enter_secret', `${input.type} ([REDACTED])`);
   }
 
   async clearText(target: string): Promise<void> {

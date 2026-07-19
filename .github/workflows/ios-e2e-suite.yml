@@ -1,0 +1,276 @@
+name: Reusable iOS FlowProof Suite
+
+on:
+  workflow_call:
+    inputs:
+      build_command:
+        description: Command that builds the caller's simulator app.
+        required: true
+        type: string
+      app_path:
+        description: Built .app path relative to the caller workspace.
+        required: true
+        type: string
+      suite_path:
+        description: Suite manifest path relative to the caller workspace.
+        default: .flowproof/suite.yaml
+        type: string
+      fixture_command:
+        description: Trusted executable fixture/reset script relative to the caller workspace.
+        required: true
+        type: string
+      model:
+        description: OpenAI model identifier.
+        default: gpt-5.6-luna
+        type: string
+      retention_days:
+        description: Evidence artifact retention period.
+        default: 7
+        type: number
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+      TEST_EMAIL:
+        description: Synthetic learner account email.
+        required: true
+      TEST_PASSWORD:
+        description: Synthetic learner account password.
+        required: true
+      FIXTURE_API_TOKEN:
+        description: Optional credential used only by the fixture command.
+        required: false
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      matrix: ${{ steps.suite.outputs.matrix }}
+      suite_key: ${{ steps.suite.outputs.suite_key }}
+      suite_name: ${{ steps.suite.outputs.suite_name }}
+      device: ${{ steps.suite.outputs.device }}
+      locale: ${{ steps.suite.outputs.locale }}
+      language: ${{ steps.suite.outputs.language }}
+      input_aliases: test_email,test_password
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Validate FlowProof suite
+        id: suite
+        uses: gokhanamal/flowproof/.github/actions/prepare-suite@main
+        with:
+          suite_path: ${{ github.workspace }}/${{ inputs.suite_path }}
+          workspace: ${{ github.workspace }}
+          input_aliases: test_email,test_password
+
+  build:
+    needs: prepare
+    runs-on: macos-15
+    timeout-minutes: 30
+    outputs:
+      app_name: ${{ steps.bundle.outputs.app_name }}
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Build simulator app
+        shell: bash
+        env:
+          BUILD_COMMAND: ${{ inputs.build_command }}
+        run: bash -lc "$BUILD_COMMAND"
+
+      - name: Package app bundle
+        id: bundle
+        shell: bash
+        env:
+          APP_PATH: ${{ github.workspace }}/${{ inputs.app_path }}
+        run: |
+          if [[ ! -d "$APP_PATH" || "$APP_PATH" != *.app ]]; then
+            echo "Expected an iOS .app bundle at $APP_PATH" >&2
+            exit 1
+          fi
+          app_name=$(basename "$APP_PATH")
+          ditto -c -k --sequesterRsrc --keepParent "$APP_PATH" "$RUNNER_TEMP/flowproof-app.zip"
+          echo "app_name=$app_name" >> "$GITHUB_OUTPUT"
+
+      - name: Upload built app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: flowproof-built-app-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flowproof-app.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  run-flow:
+    needs: [prepare, build]
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download built app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: flowproof-built-app-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/flowproof-app
+
+      - name: Extract app bundle
+        shell: bash
+        env:
+          APP_NAME: ${{ needs.build.outputs.app_name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/flowproof-app/extracted"
+          ditto -x -k "$RUNNER_TEMP/flowproof-app/flowproof-app.zip" "$RUNNER_TEMP/flowproof-app/extracted"
+          test -d "$RUNNER_TEMP/flowproof-app/extracted/$APP_NAME"
+
+      - name: Create and boot simulator
+        id: simulator
+        shell: bash
+        env:
+          DEVICE_NAME: ${{ needs.prepare.outputs.device }}
+        run: |
+          simulator_sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
+          runtime_id=$(xcrun simctl list runtimes --json | ruby -rjson -e '
+            wanted = ARGV.fetch(0)
+            runtimes = JSON.parse(STDIN.read).fetch("runtimes")
+            ios = runtimes.select { |runtime| runtime["platform"] == "iOS" && runtime["isAvailable"] }
+            abort "No iOS Simulator runtime found" if ios.empty?
+            selected = ios.find { |runtime| runtime["version"] == wanted } || ios.max_by { |runtime| Gem::Version.new(runtime["version"]) }
+            puts selected.fetch("identifier")
+          ' "$simulator_sdk")
+          device_type_id=$(xcrun simctl list devicetypes --json | ruby -rjson -e '
+            wanted = ENV.fetch("DEVICE_NAME")
+            types = JSON.parse(STDIN.read).fetch("devicetypes")
+            selected = types.find { |type| type["name"] == wanted } || types.reverse.find { |type| type["name"].start_with?("iPhone ") }
+            abort "No iPhone Simulator device type found" unless selected
+            puts selected.fetch("identifier")
+          ')
+          udid=$(xcrun simctl create "FlowProof-${{ matrix.flow_key }}" "$device_type_id" "$runtime_id")
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+
+      - name: Run recorded agent journey
+        id: flowproof
+        uses: gokhanamal/flowproof@main
+        env:
+          FLOWPROOF_INPUTS: ${{ matrix.inputs }}
+          FLOWPROOF_FIXTURE_COMMAND: ${{ matrix.fixture != '' && format('{0}/{1}', github.workspace, inputs.fixture_command) || '' }}
+          FLOWPROOF_FIXTURE_NAME: ${{ matrix.fixture }}
+          FLOWPROOF_LOCALE: ${{ needs.prepare.outputs.locale }}
+          FLOWPROOF_LANGUAGE: ${{ needs.prepare.outputs.language }}
+          FLOWPROOF_ACCOUNT_NAMESPACE: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.flow_key }}
+          FLOWPROOF_ATTEMPT_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          FLOWPROOF_SUITE_KEY: ${{ needs.prepare.outputs.suite_key }}
+          FLOWPROOF_FLOW_KEY: ${{ matrix.flow_key }}
+          FLOWPROOF_FLOW_NAME: ${{ matrix.flow_name }}
+          FLOWPROOF_REQUIRED: ${{ matrix.required }}
+          FLOWPROOF_ARTIFACT_ID: ${{ matrix.artifact_id }}
+          FLOWPROOF_BUILD_SHA: ${{ github.sha }}
+        with:
+          app_path: ${{ runner.temp }}/flowproof-app/extracted/${{ needs.build.outputs.app_name }}
+          flow_path: ${{ github.workspace }}/${{ matrix.flow_path }}
+          simulator_udid: ${{ steps.simulator.outputs.udid }}
+          model: ${{ inputs.model }}
+          artifact_name: ${{ matrix.artifact_id }}
+          retention_days: ${{ inputs.retention_days }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          runtime_input_1_name: test_email
+          runtime_input_1_value: ${{ secrets.TEST_EMAIL }}
+          runtime_input_2_name: test_password
+          runtime_input_2_value: ${{ secrets.TEST_PASSWORD }}
+          fixture_input_name: ${{ secrets.FIXTURE_API_TOKEN != '' && 'fixture_api_token' || '' }}
+          fixture_input_value: ${{ secrets.FIXTURE_API_TOKEN }}
+
+      - name: Delete simulator
+        if: always()
+        shell: bash
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          if [[ -n "$SIMULATOR_UDID" ]]; then
+            xcrun simctl shutdown "$SIMULATOR_UDID" || true
+            xcrun simctl delete "$SIMULATOR_UDID" || true
+          fi
+
+  aggregate:
+    if: always() && needs.prepare.result == 'success'
+    needs: [prepare, build, run-flow]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out caller repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Download flow results
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: ${{ needs.prepare.outputs.suite_key }}-*
+          path: ${{ runner.temp }}/flowproof-results
+
+      - name: Aggregate suite results
+        id: aggregate
+        uses: gokhanamal/flowproof/.github/actions/aggregate-suite@main
+        with:
+          suite_path: ${{ github.workspace }}/${{ inputs.suite_path }}
+          results_dir: ${{ runner.temp }}/flowproof-results
+          output_dir: ${{ runner.temp }}/flowproof-summary
+          attempt_id: ${{ github.run_id }}-${{ github.run_attempt }}
+          build_sha: ${{ github.sha }}
+          input_aliases: ${{ needs.prepare.outputs.input_aliases }}
+
+      - name: Upload suite summary
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ needs.prepare.outputs.suite_key }}-summary
+          path: ${{ runner.temp }}/flowproof-summary
+          if-no-files-found: warn
+          retention-days: ${{ inputs.retention_days }}
+
+      - name: Publish pull request report
+        if: always() && !cancelled() && github.event_name == 'pull_request'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SUMMARY_PATH: ${{ steps.aggregate.outputs.markdown_path }}
+        run: |
+          marker='<!-- flowproof-suite-report -->'
+          if [[ -f "$SUMMARY_PATH" ]]; then
+            summary=$(cat "$SUMMARY_PATH")
+          else
+            summary='## FlowProof suite\n\n**Release gate: FAILED**\n\nThe aggregate report was not produced.'
+          fi
+          body=$(printf "%s\n\n%s\n[View workflow run](%s)" "$marker" "$summary" "$RUN_URL")
+          comment_id=$(gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" \
+            --jq "map(select(.body | contains(\"<!-- flowproof-suite-report -->\"))) | first | .id // empty")
+          if [[ -n "$comment_id" ]]; then
+            gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -f body="$body"
+          else
+            gh api --method POST "repos/$GH_REPO/issues/$PR_NUMBER/comments" -f body="$body"
+          fi
+
+      - name: Enforce release gate
+        if: always()
+        shell: bash
+        env:
+          GATE_PASSED: ${{ steps.aggregate.outputs.gate_passed }}
+        run: test "$GATE_PASSED" = "true"

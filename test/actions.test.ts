@@ -2,12 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { StructuredActions } from '../src/actions.js';
 import type { ElementHandle, MobileDriver } from '../src/appium.js';
+import { RuntimeInputs } from '../src/config.js';
 
 function fixture(options: {
   clearValueError?: boolean;
   hideKeyboardError?: boolean;
   keyboardStates?: boolean[];
   pageSource?: string;
+  runtimeInputs?: RuntimeInputs;
+  setValueError?: (value: string) => Error;
 } = {}) {
   const calls: Array<{ name: string; value?: unknown }> = [];
   const element: ElementHandle = {
@@ -18,7 +21,11 @@ function fixture(options: {
     async click() { calls.push({ name: 'click' }); },
     async isDisplayed() { return true; },
     async isExisting() { return true; },
-    async setValue(value) { calls.push({ name: 'setValue', value }); },
+    async setValue(value) {
+      calls.push({ name: 'setValue', value });
+      const error = options.setValueError?.(value);
+      if (error) throw error;
+    },
   };
   const driver: MobileDriver = {
     async $(selector) {
@@ -42,7 +49,7 @@ function fixture(options: {
   const records: Array<{ action: string; detail: string }> = [];
   const actions = new StructuredActions(driver, {
     recordAction(action, detail) { records.push({ action, detail }); },
-  });
+  }, options.runtimeInputs);
   return { actions, calls, records };
 }
 
@@ -66,6 +73,36 @@ test('tap and text actions only target controls from the latest observation', as
   });
   assert.deepEqual(records.at(-2), { action: 'enter_text', detail: 'TextField (18 characters)' });
   assert.deepEqual(records.at(-1), { action: 'clear_text', detail: 'TextField' });
+});
+
+test('secret entry redacts a driver error that echoes the submitted value', async () => {
+  const secret = 'driver-must-not-echo-this';
+  const { actions } = fixture({
+    runtimeInputs: new RuntimeInputs(new Map([['test_password', secret]])),
+    setValueError: (value) => new Error(`Could not enter ${value}`),
+  });
+  actions.updateObservation([{ type: 'SecureTextField', name: 'Password' }]);
+
+  await assert.rejects(actions.enterSecret('Password', 'test_password'), (error: Error) => {
+    assert.equal(error.message, 'Could not enter [REDACTED]');
+    assert.equal(error.message.includes(secret), false);
+    return true;
+  });
+});
+
+test('secret entry resolves an allow-listed alias only at action execution and records no value', async () => {
+  const secret = 'never-record-this-value';
+  const { actions, calls, records } = fixture({
+    runtimeInputs: new RuntimeInputs(new Map([['test_password', secret]])),
+  });
+  actions.updateObservation([{ type: 'SecureTextField', name: 'Password' }]);
+
+  await actions.enterSecret('Password', 'test_password');
+
+  assert.deepEqual(calls.find((call) => call.name === 'setValue'), { name: 'setValue', value: secret });
+  assert.deepEqual(records, [{ action: 'enter_secret', detail: 'SecureTextField ([REDACTED])' }]);
+  assert.equal(JSON.stringify(records).includes(secret), false);
+  await assert.rejects(actions.enterSecret('Password', 'other_password'), /not allow-listed/);
 });
 
 test('gesture and alert actions expose fixed Appium commands', async () => {

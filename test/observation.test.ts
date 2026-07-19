@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { EvidenceGate } from '../src/evidence.js';
 import {
   compactAccessibilityTree,
   selectorForObservedInput,
@@ -28,6 +29,16 @@ test('compactAccessibilityTree enforces the model-input budget', () => {
   const result = compactAccessibilityTree(xml, 100);
   assert.equal(result.truncated, true);
   assert.ok(result.text.length <= 100);
+  assert.deepEqual(result.nodes.map((node) => node.name), ['ExampleApp', 'Welcome', 'Settings']);
+  assert.doesNotMatch(result.text, /Settings/);
+});
+
+test('deterministic evidence receives nodes beyond the model-input budget', () => {
+  const observation = compactAccessibilityTree(xml, 100);
+  const gate = new EvidenceGate({ stages: [{ name: 'settings', all: [{ name: 'Settings' }] }] });
+
+  assert.doesNotMatch(observation.text, /Settings/);
+  assert.equal(gate.record(observation.nodes).passed, true);
 });
 
 test('selectorForObservedText targets the interactive control instead of duplicate static text', () => {

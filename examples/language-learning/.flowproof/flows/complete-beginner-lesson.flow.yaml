@@ -1,0 +1,23 @@
+key: complete-beginner-lesson
+name: Complete a beginner lesson
+description: Verify a learner can finish the deterministically seeded beginner lesson.
+maxTurns: 20
+instructions: |
+  Sign in with the configured test account, open the seeded beginner lesson,
+  answer its exercises, and finish the lesson. Stop at the completion screen.
+evidence:
+  stages:
+    - name: lesson ready
+      all:
+        - name: Beginner lesson
+      none:
+        - namePattern: "Error|Unable to load"
+    - name: answer accepted
+      all:
+        - name: Correct
+    - name: lesson completed
+      all:
+        - name: Lesson complete
+        - value: +10 XP
+      none:
+        - namePattern: "Error|Try again later"

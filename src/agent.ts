@@ -6,7 +6,7 @@ import type { Config } from './config.js';
 import { EvidenceGate } from './evidence.js';
 import { EvidenceStore } from './evidence-store.js';
 import type { FlowDefinition } from './flow.js';
-import { compactAccessibilityTree } from './observation.js';
+import { compactAccessibilityTree, type AccessibleNode } from './observation.js';
 import { RecordingModel, sanitizeTranscriptValue } from './transcript.js';
 
 export const AGENT_INSTRUCTIONS = [
@@ -14,13 +14,16 @@ export const AGENT_INSTRUCTIONS = [
   'Call observe first and after every action. Take one action at a time.',
   'Only tap an exact accessibility name or label returned by the latest observation.',
   'Only enter or clear text in an exact text-input name, label, or value returned by the latest observation.',
+  'Use enter_secret for configured runtime input aliases; never request, repeat, or type a secret value with enter_text.',
   'Use bounded waits only when the interface is visibly loading or changing asynchronously.',
   'Stop as soon as every deterministic check returned by observe is true.',
+  'Stop immediately if observe reports deterministicFailed; forbidden evidence is a terminal flow failure.',
   'If blocked, stop and concisely describe the visible blocker.',
   'Do not grade the test yourself; deterministic runner checks decide pass or fail.',
 ].join(' ');
 
 export interface AgentRunReport {
+  status: 'passed' | 'failed' | 'error';
   model: string;
   agentSummary: unknown;
   evidence: ReturnType<EvidenceGate['status']>;
@@ -34,6 +37,30 @@ export interface AgentRunReport {
   error?: string;
 }
 
+function redactNodes(nodes: AccessibleNode[], config: Config): AccessibleNode[] {
+  return nodes.map((node) => ({
+    ...node,
+    ...(node.name ? { name: config.runtimeInputs.redact(node.name) } : {}),
+    ...(node.label ? { label: config.runtimeInputs.redact(node.label) } : {}),
+    ...(node.value ? { value: config.runtimeInputs.redact(node.value) } : {}),
+  }));
+}
+
+function boundedModelNodes(nodes: AccessibleNode[], maxCharacters = 12_000): {
+  nodes: AccessibleNode[];
+  truncated: boolean;
+} {
+  const output: AccessibleNode[] = [];
+  let size = 2;
+  for (const node of nodes) {
+    const nodeSize = JSON.stringify(node).length + (output.length > 0 ? 1 : 0);
+    if (size + nodeSize > maxCharacters) return { nodes: output, truncated: true };
+    output.push(node);
+    size += nodeSize;
+  }
+  return { nodes: output, truncated: false };
+}
+
 export async function runAgent(
   config: Config,
   flow: FlowDefinition,
@@ -41,8 +68,12 @@ export async function runAgent(
   store: EvidenceStore,
 ): Promise<AgentRunReport> {
   const gate = new EvidenceGate(flow.evidence);
-  const actions = new StructuredActions(driver, store);
+  const actions = new StructuredActions(driver, store, config.runtimeInputs);
   const observeNext = 'Action completed. Observe the screen before taking another action.';
+  const meaningfulActionCompleted = (action: string) => {
+    gate.recordAction(action);
+    return observeNext;
+  };
 
   const observe = tool({
     name: 'observe',
@@ -54,12 +85,15 @@ export async function runAgent(
       const screenshot = await driver.takeScreenshot();
       const observation = compactAccessibilityTree(xml);
       actions.updateObservation(observation.nodes);
-      const status = gate.record(observation.nodes);
-      await store.observation(xml, screenshot, observation.nodes);
+      const safeNodes = redactNodes(observation.nodes, config);
+      const modelObservation = boundedModelNodes(safeNodes);
+      const status = gate.record(safeNodes);
+      await store.observation(config.runtimeInputs.redact(xml), screenshot, safeNodes);
       return JSON.stringify({
-        elements: observation.nodes,
-        truncated: observation.truncated,
+        elements: modelObservation.nodes,
+        truncated: modelObservation.truncated,
         deterministicChecks: status.checks,
+        deterministicFailed: status.failed,
       });
     },
   });
@@ -71,7 +105,7 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async ({ text }) => {
       await actions.tapText(text);
-      return observeNext;
+      return meaningfulActionCompleted('tap_text');
     },
   });
 
@@ -85,9 +119,23 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async ({ target, text }) => {
       await actions.enterText(target, text);
-      return observeNext;
+      return meaningfulActionCompleted('enter_text');
     },
   });
+
+  const enterSecret = config.runtimeInputs.names.length > 0 ? tool({
+    name: 'enter_secret',
+    description: `Enter a configured runtime input without exposing its value. Allowed inputName aliases: ${config.runtimeInputs.names.join(', ')}.`,
+    parameters: z.object({
+      target: z.string().min(1).max(120),
+      inputName: z.string().refine((name) => config.runtimeInputs.names.includes(name), 'Runtime input is not allow-listed'),
+    }),
+    timeoutMs: 20_000,
+    execute: async ({ target, inputName }) => {
+      await actions.enterSecret(target, inputName);
+      return meaningfulActionCompleted('enter_secret');
+    },
+  }) : undefined;
 
   const clearText = tool({
     name: 'clear_text',
@@ -96,7 +144,7 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async ({ target }) => {
       await actions.clearText(target);
-      return observeNext;
+      return meaningfulActionCompleted('clear_text');
     },
   });
 
@@ -107,7 +155,7 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async ({ direction }) => {
       await actions.swipe(direction);
-      return observeNext;
+      return meaningfulActionCompleted('swipe');
     },
   });
 
@@ -118,7 +166,7 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async ({ direction }) => {
       await actions.scroll(direction);
-      return observeNext;
+      return meaningfulActionCompleted('scroll');
     },
   });
 
@@ -140,7 +188,7 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async () => {
       await actions.dismissKeyboard();
-      return observeNext;
+      return meaningfulActionCompleted('dismiss_keyboard');
     },
   });
 
@@ -151,7 +199,7 @@ export async function runAgent(
     timeoutMs: 20_000,
     execute: async ({ action }) => {
       await actions.handleAlert(action);
-      return observeNext;
+      return meaningfulActionCompleted('handle_alert');
     },
   });
 
@@ -162,11 +210,12 @@ export async function runAgent(
     timeoutMs: 60_000,
     execute: async () => {
       await actions.relaunchApp();
-      return observeNext;
+      return meaningfulActionCompleted('relaunch_app');
     },
   });
 
-  const tools = [observe, tapText, enterText, clearText, swipe, scroll, wait, dismissKeyboard, handleAlert, relaunchApp];
+  const tools = [observe, tapText, enterText, enterSecret, clearText, swipe, scroll, wait, dismissKeyboard, handleAlert, relaunchApp]
+    .filter((agentTool) => agentTool !== undefined);
   const toolNames = tools.map((agentTool) => agentTool.name);
 
   const modelSettings = {
@@ -222,6 +271,7 @@ export async function runAgent(
       ],
     });
     return {
+      status: gate.status().passed ? 'passed' : 'failed',
       model: config.model,
       agentSummary: result.finalOutput,
       evidence: gate.status(),
@@ -236,6 +286,7 @@ export async function runAgent(
       error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
     });
     return {
+      status: 'error',
       model: config.model,
       agentSummary: null,
       evidence: gate.status(),

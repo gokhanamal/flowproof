@@ -83,15 +83,14 @@ jobs:
 
       - name: Run recorded agent journey
         id: flowproof
-        uses: gokhanamal/flowproof@v0.1.0
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        uses: gokhanamal/flowproof@main
         with:
           app_path: ${{ github.workspace }}/${{ inputs.app_path }}
           flow_path: ${{ github.workspace }}/${{ inputs.flow_path }}
           simulator_udid: ${{ steps.simulator.outputs.udid }}
           model: ${{ inputs.model }}
           artifact_name: ${{ inputs.artifact_name }}
+          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
 
       - name: Delete simulator
         if: always()

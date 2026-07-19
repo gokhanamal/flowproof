@@ -25,6 +25,39 @@ inputs:
   appium_port:
     description: Local Appium server port.
     default: "4723"
+  openai_api_key:
+    description: OpenAI API key. Pass a GitHub secret; exposed only to the journey step.
+    default: ""
+  runtime_input_1_name:
+    description: Optional first runtime input alias.
+    default: ""
+  runtime_input_1_value:
+    description: Optional first runtime input secret.
+    default: ""
+  runtime_input_2_name:
+    description: Optional second runtime input alias.
+    default: ""
+  runtime_input_2_value:
+    description: Optional second runtime input secret.
+    default: ""
+  runtime_input_3_name:
+    description: Optional third runtime input alias.
+    default: ""
+  runtime_input_3_value:
+    description: Optional third runtime input secret.
+    default: ""
+  runtime_input_4_name:
+    description: Optional fourth runtime input alias.
+    default: ""
+  runtime_input_4_value:
+    description: Optional fourth runtime input secret.
+    default: ""
+  fixture_input_name:
+    description: Optional fixture-only input alias.
+    default: ""
+  fixture_input_value:
+    description: Optional fixture-only secret.
+    default: ""
 outputs:
   artifacts_path:
     description: Absolute path containing the run evidence.
@@ -68,7 +101,7 @@ runs:
         ACTION_ROOT: ${{ github.action_path }}
         APPIUM_HOME: ${{ runner.temp }}/flowproof-appium-home
         APPIUM_PORT: ${{ inputs.appium_port }}
-        ARTIFACTS_PATH: ${{ steps.paths.outputs.artifacts_path }}
+        APPIUM_LOG_PATH: ${{ runner.temp }}/flowproof-appium.log
       run: |
         npm exec --prefix "$ACTION_ROOT" -- appium \
           --address 127.0.0.1 \
@@ -76,7 +109,7 @@ runs:
           --base-path / \
           --log-no-colors \
           --log-timestamp \
-          > "$ARTIFACTS_PATH/appium.log" 2>&1 &
+          > "$APPIUM_LOG_PATH" 2>&1 &
         echo "AGENT_APPIUM_PID=$!" >> "$GITHUB_ENV"
         for _ in {1..60}; do
           if curl --fail --silent --show-error "http://127.0.0.1:$APPIUM_PORT/status"; then
@@ -84,7 +117,7 @@ runs:
           fi
           sleep 1
         done
-        tail -n 100 "$ARTIFACTS_PATH/appium.log"
+        tail -n 100 "$APPIUM_LOG_PATH"
         exit 1
 
     - name: Run agent journey
@@ -98,7 +131,38 @@ runs:
         APP_PATH: ${{ inputs.app_path }}
         FLOW_PATH: ${{ inputs.flow_path }}
         ARTIFACTS_DIR: ${{ steps.paths.outputs.artifacts_path }}
-      run: npm start --prefix "$ACTION_ROOT"
+        SECURE_OPENAI_API_KEY: ${{ inputs.openai_api_key }}
+        INPUT_1_NAME: ${{ inputs.runtime_input_1_name }}
+        INPUT_1_VALUE: ${{ inputs.runtime_input_1_value }}
+        INPUT_2_NAME: ${{ inputs.runtime_input_2_name }}
+        INPUT_2_VALUE: ${{ inputs.runtime_input_2_value }}
+        INPUT_3_NAME: ${{ inputs.runtime_input_3_name }}
+        INPUT_3_VALUE: ${{ inputs.runtime_input_3_value }}
+        INPUT_4_NAME: ${{ inputs.runtime_input_4_name }}
+        INPUT_4_VALUE: ${{ inputs.runtime_input_4_value }}
+        FIXTURE_INPUT_NAME: ${{ inputs.fixture_input_name }}
+        FIXTURE_INPUT_VALUE: ${{ inputs.fixture_input_value }}
+      run: |
+        configure_input() {
+          local prefix="$1"
+          local name="$2"
+          local value="$3"
+          [[ -z "$name" ]] && return 0
+          if [[ ! "$name" =~ ^[a-z][a-z0-9_]{0,63}$ || -z "$value" || "$value" == *$'\n'* ]]; then
+            echo "Invalid or missing secure input: $name" >&2
+            return 1
+          fi
+          local upper
+          upper=$(printf '%s' "$name" | tr '[:lower:]' '[:upper:]')
+          export "${prefix}_${upper}=$value"
+        }
+        export OPENAI_API_KEY="${SECURE_OPENAI_API_KEY:-${OPENAI_API_KEY:-}}"
+        configure_input FLOWPROOF_INPUT "$INPUT_1_NAME" "$INPUT_1_VALUE"
+        configure_input FLOWPROOF_INPUT "$INPUT_2_NAME" "$INPUT_2_VALUE"
+        configure_input FLOWPROOF_INPUT "$INPUT_3_NAME" "$INPUT_3_VALUE"
+        configure_input FLOWPROOF_INPUT "$INPUT_4_NAME" "$INPUT_4_VALUE"
+        configure_input FLOWPROOF_FIXTURE_INPUT "$FIXTURE_INPUT_NAME" "$FIXTURE_INPUT_VALUE"
+        npm start --prefix "$ACTION_ROOT"
 
     - name: Stop Appium
       if: always()

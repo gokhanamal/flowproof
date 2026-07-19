@@ -95,7 +95,7 @@ export function compactAccessibilityTree(xml: string, maxCharacters = 12_000): C
     size += line.length + 1;
   }
 
-  return { nodes: nodes.slice(0, lines.length), text: lines.join('\n'), truncated };
+  return { nodes, text: lines.join('\n'), truncated };
 }
 
 export function observedText(nodes: AccessibleNode[]): string {
