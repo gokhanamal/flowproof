@@ -1,0 +1,18 @@
+key: language-learning-release
+name: Language-learning release checks
+device: iPhone 16
+locale: en_US
+language: en
+flows:
+  - path: flows/sign-in.flow.yaml
+    required: true
+    fixture: returning_learner
+    inputs: [test_email, test_password]
+  - path: flows/complete-beginner-lesson.flow.yaml
+    required: true
+    fixture: beginner_lesson_ready
+    inputs: [test_email, test_password]
+  - path: flows/progress-survives-relaunch.flow.yaml
+    required: true
+    fixture: learner_with_progress
+    inputs: [test_email, test_password]

@@ -37,6 +37,8 @@ export async function connectAppium(config: Config): Promise<MobileDriver> {
       'appium:automationName': 'XCUITest',
       'appium:udid': config.simulatorUdid,
       'appium:app': config.appPath,
+      ...(config.language ? { 'appium:language': config.language } : {}),
+      ...(config.locale ? { 'appium:locale': config.locale } : {}),
       'appium:noReset': false,
       'appium:fullReset': false,
       'appium:forceAppLaunch': true,

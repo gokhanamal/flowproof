@@ -1,0 +1,17 @@
+key: learner-sign-in
+name: Learner signs in
+description: Verify a returning learner can reach their course home.
+maxTurns: 12
+instructions: |
+  Sign in with the configured test account. Stop when the learner's course
+  home is visible. Do not change course or account settings.
+evidence:
+  stages:
+    - name: sign-in ready
+      all:
+        - name: Sign in
+    - name: course home visible
+      all:
+        - name: Continue learning
+      none:
+        - namePattern: "Error|Unable to sign in|Invalid|Try again"

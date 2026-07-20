@@ -26,6 +26,7 @@
   },
   "scripts": {
     "start": "tsx src/cli.ts",
+    "suite": "node --import tsx src/suite-cli.ts",
     "smoke:appium": "tsx src/smoke.ts",
     "test": "node --import tsx --test test/**/*.test.ts",
     "typecheck": "tsc --noEmit",

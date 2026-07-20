@@ -1,0 +1,54 @@
+name: Aggregate FlowProof suite
+description: Aggregate per-flow terminal results into one release-gate report.
+inputs:
+  suite_path:
+    required: true
+    description: Absolute path to the suite manifest.
+  results_dir:
+    required: true
+    description: Directory containing one downloaded artifact directory per flow.
+  output_dir:
+    required: true
+    description: Directory for suite-report.json and suite-summary.md.
+  attempt_id:
+    required: true
+    description: Stable workflow attempt identifier.
+  build_sha:
+    required: true
+    description: Release candidate commit SHA.
+  input_aliases:
+    description: Comma-separated runtime input aliases supplied by the caller.
+    default: ""
+outputs:
+  gate_passed:
+    value: ${{ steps.aggregate.outputs.gate_passed }}
+  json_path:
+    value: ${{ steps.aggregate.outputs.json_path }}
+  markdown_path:
+    value: ${{ steps.aggregate.outputs.markdown_path }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 24
+
+    - name: Install FlowProof
+      shell: bash
+      env:
+        FLOWPROOF_ROOT: ${{ github.action_path }}/../../..
+      run: npm ci --prefix "$FLOWPROOF_ROOT"
+
+    - name: Aggregate suite results
+      id: aggregate
+      shell: bash
+      env:
+        FLOWPROOF_ROOT: ${{ github.action_path }}/../../..
+        FLOWPROOF_SUITE_PATH: ${{ inputs.suite_path }}
+        FLOWPROOF_RESULTS_DIR: ${{ inputs.results_dir }}
+        FLOWPROOF_OUTPUT_DIR: ${{ inputs.output_dir }}
+        FLOWPROOF_ATTEMPT_ID: ${{ inputs.attempt_id }}
+        FLOWPROOF_BUILD_SHA: ${{ inputs.build_sha }}
+        FLOWPROOF_INPUT_ALIASES: ${{ inputs.input_aliases }}
+      run: node --import "$FLOWPROOF_ROOT/node_modules/tsx/dist/loader.mjs" "$FLOWPROOF_ROOT/src/suite-cli.ts" aggregate "$FLOWPROOF_SUITE_PATH" "$FLOWPROOF_RESULTS_DIR" "$FLOWPROOF_OUTPUT_DIR" "$FLOWPROOF_ATTEMPT_ID" "$FLOWPROOF_BUILD_SHA"

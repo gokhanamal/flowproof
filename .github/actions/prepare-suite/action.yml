@@ -1,0 +1,48 @@
+name: Prepare FlowProof suite
+description: Validate a FlowProof suite manifest and produce its execution matrix.
+inputs:
+  suite_path:
+    description: Absolute path to the suite manifest in the caller workspace.
+    required: true
+  workspace:
+    description: Absolute caller workspace used to create portable flow paths.
+    required: true
+  input_aliases:
+    description: Comma-separated runtime input aliases supplied by the caller.
+    default: ""
+outputs:
+  matrix:
+    value: ${{ steps.prepare.outputs.matrix }}
+  suite_key:
+    value: ${{ steps.prepare.outputs.suite_key }}
+  suite_name:
+    value: ${{ steps.prepare.outputs.suite_name }}
+  device:
+    value: ${{ steps.prepare.outputs.device }}
+  locale:
+    value: ${{ steps.prepare.outputs.locale }}
+  language:
+    value: ${{ steps.prepare.outputs.language }}
+runs:
+  using: composite
+  steps:
+    - name: Set up Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: 24
+
+    - name: Install FlowProof
+      shell: bash
+      env:
+        FLOWPROOF_ROOT: ${{ github.action_path }}/../../..
+      run: npm ci --prefix "$FLOWPROOF_ROOT"
+
+    - name: Validate suite and create matrix
+      id: prepare
+      shell: bash
+      env:
+        FLOWPROOF_ROOT: ${{ github.action_path }}/../../..
+        FLOWPROOF_SUITE_PATH: ${{ inputs.suite_path }}
+        FLOWPROOF_WORKSPACE: ${{ inputs.workspace }}
+        FLOWPROOF_INPUT_ALIASES: ${{ inputs.input_aliases }}
+      run: node --import "$FLOWPROOF_ROOT/node_modules/tsx/dist/loader.mjs" "$FLOWPROOF_ROOT/src/suite-cli.ts" prepare "$FLOWPROOF_SUITE_PATH" "$FLOWPROOF_WORKSPACE"

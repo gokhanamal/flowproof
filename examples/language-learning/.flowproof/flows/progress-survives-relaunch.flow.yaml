@@ -1,0 +1,22 @@
+key: progress-survives-relaunch
+name: Progress survives relaunch
+description: Verify seeded learning progress remains visible after restarting the app.
+maxTurns: 16
+instructions: |
+  Sign in with the configured test account and note the visible seeded course
+  progress. Relaunch the app, return to the course home, and stop when the same
+  progress is visible.
+evidence:
+  stages:
+    - name: seeded progress visible
+      all:
+        - name: Beginner course
+        - value: 20% complete
+    - name: progress visible after relaunch
+      afterAction: relaunch_app
+      allowSameState: true
+      all:
+        - name: Beginner course
+        - value: 20% complete
+      none:
+        - namePattern: "Error|Unable to load progress"
