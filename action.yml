@@ -167,9 +167,15 @@ runs:
     - name: Stop Appium
       if: always()
       shell: bash
+      env:
+        APPIUM_LOG_PATH: ${{ runner.temp }}/flowproof-appium.log
+        ARTIFACTS_PATH: ${{ steps.paths.outputs.artifacts_path }}
       run: |
         if [[ -n "${AGENT_APPIUM_PID:-}" ]]; then
           kill "$AGENT_APPIUM_PID" || true
+        fi
+        if [[ -f "$APPIUM_LOG_PATH" ]]; then
+          cp "$APPIUM_LOG_PATH" "$ARTIFACTS_PATH/appium.log" || true
         fi
 
     - name: Upload run evidence

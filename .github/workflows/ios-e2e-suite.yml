@@ -66,7 +66,7 @@ jobs:
 
       - name: Validate FlowProof suite
         id: suite
-        uses: gokhanamal/flowproof/.github/actions/prepare-suite@main
+        uses: gokhanamal/flowproof/.github/actions/prepare-suite@f6b18127a25aa33d160238debb3c3175cccbeb83 # feat: add release regression suites
         with:
           suite_path: ${{ github.workspace }}/${{ inputs.suite_path }}
           workspace: ${{ github.workspace }}
@@ -166,7 +166,7 @@ jobs:
 
       - name: Run recorded agent journey
         id: flowproof
-        uses: gokhanamal/flowproof@main
+        uses: gokhanamal/flowproof@f6b18127a25aa33d160238debb3c3175cccbeb83 # feat: add release regression suites
         env:
           FLOWPROOF_INPUTS: ${{ matrix.inputs }}
           FLOWPROOF_FIXTURE_COMMAND: ${{ matrix.fixture != '' && format('{0}/{1}', github.workspace, inputs.fixture_command) || '' }}
@@ -225,7 +225,7 @@ jobs:
 
       - name: Aggregate suite results
         id: aggregate
-        uses: gokhanamal/flowproof/.github/actions/aggregate-suite@main
+        uses: gokhanamal/flowproof/.github/actions/aggregate-suite@f6b18127a25aa33d160238debb3c3175cccbeb83 # feat: add release regression suites
         with:
           suite_path: ${{ github.workspace }}/${{ inputs.suite_path }}
           results_dir: ${{ runner.temp }}/flowproof-results

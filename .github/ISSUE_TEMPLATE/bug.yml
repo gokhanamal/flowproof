@@ -1,0 +1,73 @@
+name: Bug report
+description: Report a reproducible problem in FlowProof
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Remove secrets and sensitive application data before submitting. Report vulnerabilities through the private link in the security policy.
+  - type: input
+    id: version
+    attributes:
+      label: FlowProof version
+      description: Provide an exact tag or commit SHA.
+      placeholder: v0.1.0 or full commit SHA
+    validations:
+      required: true
+  - type: dropdown
+    id: entrypoint
+    attributes:
+      label: Entry point
+      options:
+        - Reusable workflow
+        - Composite action
+        - Local CLI
+        - Offline validation or development
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include relevant macOS, Xcode, iOS Simulator, Node.js, Appium, and model versions.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Minimal reproduction
+      description: Provide sanitized steps, workflow configuration, or flow YAML.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs
+      description: Do not include credentials, private app data, screenshots, accessibility dumps, or recordings.
+      render: shell
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Submission checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed secrets and sensitive application data.
+          required: true
+        - label: This is not a security vulnerability.
+          required: true

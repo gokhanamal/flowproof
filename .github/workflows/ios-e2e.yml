@@ -27,13 +27,16 @@ on:
         description: Uploaded artifact name.
         default: flowproof
         type: string
+      retention_days:
+        description: Number of days to retain uploaded evidence.
+        default: 7
+        type: number
     secrets:
       OPENAI_API_KEY:
         required: true
 
 permissions:
   contents: read
-  pull-requests: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -43,6 +46,11 @@ jobs:
   ios-agent-e2e:
     runs-on: macos-15
     timeout-minutes: 35
+    outputs:
+      artifact_url: ${{ steps.flowproof.outputs.artifact_url }}
+      device_name: ${{ steps.simulator.outputs.device_name }}
+      runtime_name: ${{ steps.simulator.outputs.runtime_name }}
+      runtime_version: ${{ steps.simulator.outputs.runtime_version }}
 
     steps:
       - name: Check out caller repository
@@ -61,36 +69,43 @@ jobs:
           DEVICE_NAME: ${{ inputs.device_name }}
         run: |
           simulator_sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
-          runtime_id=$(xcrun simctl list runtimes --json | ruby -rjson -e '
+          IFS=$'\t' read -r runtime_id runtime_version runtime_name < <(xcrun simctl list runtimes --json | ruby -rjson -e '
             wanted = ARGV.fetch(0)
             runtimes = JSON.parse(STDIN.read).fetch("runtimes")
             ios = runtimes.select { |runtime| runtime["platform"] == "iOS" && runtime["isAvailable"] }
             abort "No iOS Simulator runtime found" if ios.empty?
             selected = ios.find { |runtime| runtime["version"] == wanted } || ios.max_by { |runtime| Gem::Version.new(runtime["version"]) }
-            puts selected.fetch("identifier")
+            puts [selected.fetch("identifier"), selected.fetch("version"), selected.fetch("name")].join("\t")
           ' "$simulator_sdk")
-          device_type_id=$(xcrun simctl list devicetypes --json | ruby -rjson -e '
+          IFS=$'\t' read -r device_type_id resolved_device_name < <(xcrun simctl list devicetypes --json | ruby -rjson -e '
             wanted = ENV.fetch("DEVICE_NAME")
             types = JSON.parse(STDIN.read).fetch("devicetypes")
             selected = types.find { |type| type["name"] == wanted } || types.reverse.find { |type| type["name"].start_with?("iPhone ") }
             abort "No iPhone Simulator device type found" unless selected
-            puts selected.fetch("identifier")
+            puts [selected.fetch("identifier"), selected.fetch("name")].join("\t")
           ')
           udid=$(xcrun simctl create "FlowProof" "$device_type_id" "$runtime_id")
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          {
+            echo "udid=$udid"
+            echo "device_name=$resolved_device_name"
+            echo "runtime_name=$runtime_name"
+            echo "runtime_version=$runtime_version"
+          } >> "$GITHUB_OUTPUT"
           xcrun simctl boot "$udid"
           xcrun simctl bootstatus "$udid" -b
 
       - name: Run recorded agent journey
         id: flowproof
-        uses: gokhanamal/flowproof@main
+        uses: gokhanamal/flowproof@99db59105f873e02f6cd48083e93c97027738ab6 # licensed release action
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         with:
           app_path: ${{ github.workspace }}/${{ inputs.app_path }}
           flow_path: ${{ github.workspace }}/${{ inputs.flow_path }}
           simulator_udid: ${{ steps.simulator.outputs.udid }}
           model: ${{ inputs.model }}
           artifact_name: ${{ inputs.artifact_name }}
-          openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          retention_days: ${{ inputs.retention_days }}
 
       - name: Delete simulator
         if: always()
@@ -103,22 +118,45 @@ jobs:
             xcrun simctl delete "$SIMULATOR_UDID" || true
           fi
 
+  report:
+    needs: ios-agent-e2e
+    if: always() && github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
       - name: Publish pull request report
-        if: always() && !cancelled() && github.event_name == 'pull_request'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          FLOWPROOF_OUTCOME: ${{ steps.flowproof.outcome }}
-          ARTIFACT_URL: ${{ steps.flowproof.outputs.artifact_url }}
+          E2E_RESULT: ${{ needs.ios-agent-e2e.result }}
+          ARTIFACT_URL: ${{ needs.ios-agent-e2e.outputs.artifact_url }}
+          TESTED_COMMIT: ${{ github.event.pull_request.head.sha }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          DEVICE_NAME: ${{ needs.ios-agent-e2e.outputs.device_name }}
+          RUNTIME_NAME: ${{ needs.ios-agent-e2e.outputs.runtime_name }}
+          RUNTIME_VERSION: ${{ needs.ios-agent-e2e.outputs.runtime_version }}
+          RETENTION_DAYS: ${{ inputs.retention_days }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           marker='<!-- flowproof-report -->'
-          if [[ "$FLOWPROOF_OUTCOME" == "success" ]]; then
+          if [[ "$E2E_RESULT" == "success" ]]; then
             status='Passed ✅'
-          else
+          elif [[ "$E2E_RESULT" == "cancelled" ]]; then
+            status='Cancelled ⚪'
+          elif [[ "$E2E_RESULT" == "failure" ]]; then
             status='Failed ❌'
+          else
+            status='Not completed ⚠️'
+          fi
+
+          simulator_environment='Unavailable (simulator setup did not complete)'
+          if [[ -n "$DEVICE_NAME" && -n "$RUNTIME_NAME" ]]; then
+            simulator_environment="$DEVICE_NAME / $RUNTIME_NAME ($RUNTIME_VERSION)"
           fi
 
           if [[ -n "$ARTIFACT_URL" ]]; then
@@ -127,10 +165,11 @@ jobs:
             evidence='The evidence artifact was not available.'
           fi
 
-          body=$(printf "%s\n\n### FlowProof E2E: %s\n\n%s\n\n[View workflow run](%s)\n\n_The artifact contains \`screen-recording.mp4\` and expires according to the configured retention period._" \
-            "$marker" "$status" "$evidence" "$RUN_URL")
-          comment_id=$(gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" \
-            --jq "map(select(.body | contains(\"<!-- flowproof-report -->\"))) | first | .id // empty")
+          body=$(printf "%s\n\n### FlowProof E2E: %s\n\n- Tested commit: \`%s\`\n- Run attempt: %s\n- Simulator: %s\n- Artifact expiry: %s days after upload\n\n%s\n\n[View workflow run](%s)\n\n_This report describes only the commit and run attempt above. The artifact contains \`screen-recording.mp4\`._" \
+            "$marker" "$status" "$TESTED_COMMIT" "$RUN_ATTEMPT" "$simulator_environment" "$RETENTION_DAYS" "$evidence" "$RUN_URL")
+          comment_id=$(gh api --paginate --slurp \
+            "repos/$GH_REPO/issues/$PR_NUMBER/comments?per_page=100" \
+            --jq 'map(.[]) | map(select(.user.login == "github-actions[bot]" and (.body | contains("<!-- flowproof-report -->")))) | first | .id // empty')
 
           if [[ -n "$comment_id" ]]; then
             gh api --method PATCH "repos/$GH_REPO/issues/comments/$comment_id" -f body="$body"

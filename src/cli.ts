@@ -48,6 +48,10 @@ function suiteResult(report: TerminalReport, env: NodeJS.ProcessEnv): FlowRunRes
   if (!flowKey || !flowName || required === undefined) {
     throw new Error('Suite execution requires FLOWPROOF_FLOW_KEY, FLOWPROOF_FLOW_NAME, and FLOWPROOF_REQUIRED');
   }
+  const artifactId = env.FLOWPROOF_ARTIFACT_ID?.trim();
+  if (!artifactId) throw new Error('Suite execution requires FLOWPROOF_ARTIFACT_ID');
+  const buildSha = env.FLOWPROOF_BUILD_SHA?.trim();
+  if (!buildSha) throw new Error('Suite execution requires FLOWPROOF_BUILD_SHA');
   const firstFailedStage = report.evidence?.stages.find((stage) => stage.state !== 'passed')?.name;
   const reason = report.status === 'error'
     ? report.failure?.message ?? 'Flow infrastructure error'
@@ -59,13 +63,13 @@ function suiteResult(report: TerminalReport, env: NodeJS.ProcessEnv): FlowRunRes
     suiteKey: env.FLOWPROOF_SUITE_KEY.trim(),
     flowKey,
     flowName,
-    artifactId: env.FLOWPROOF_ARTIFACT_ID?.trim(),
+    artifactId,
     required,
     status: report.status,
     durationMs: report.durationMs,
     turns: report.transcriptTurns ?? 0,
     attemptId: report.attemptId,
-    buildSha: env.FLOWPROOF_BUILD_SHA?.trim(),
+    buildSha,
     ...(firstFailedStage ? { firstFailedStage } : {}),
     ...(reason ? { reason } : {}),
     ...(report.status === 'error' ? { errorClass: report.failure?.name ?? 'Error' } : {}),
