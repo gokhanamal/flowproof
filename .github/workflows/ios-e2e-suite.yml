@@ -62,7 +62,7 @@ jobs:
       input_aliases: test_email,test_password
     steps:
       - name: Check out caller repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
       - name: Validate FlowProof suite
         id: suite
@@ -80,7 +80,7 @@ jobs:
       app_name: ${{ steps.bundle.outputs.app_name }}
     steps:
       - name: Check out caller repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
       - name: Build simulator app
         shell: bash
@@ -120,7 +120,7 @@ jobs:
     timeout-minutes: 40
     steps:
       - name: Check out caller repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
       - name: Download built app
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
@@ -214,7 +214,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Check out caller repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
 
       - name: Download flow results
         continue-on-error: true
