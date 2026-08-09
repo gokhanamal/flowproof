@@ -33,7 +33,7 @@
     "validate": "npm run typecheck && npm test"
   },
   "dependencies": {
-    "@openai/agents": "0.13.5",
+    "@openai/agents": "0.14.3",
     "fast-xml-parser": "5.10.1",
     "webdriverio": "9.29.1",
     "yaml": "2.9.0",
